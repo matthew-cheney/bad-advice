@@ -11,7 +11,7 @@ class BadAdviceCFG:
         self.lemmatizer = nltk.WordNetLemmatizer()
 
         self.auxiliaries = {'is', 'am', 'are', 'was', 'were', 'have', 'has', 'had', 'do', 'does', 'did', 'could', 'would', 'should', 'may', 'must', 'might', 'can', 'will', 'won\'t'}
-        self.prons_to_flip = {'your': 'my', 'my': 'your', 'yours': 'mine', 'mine': 'yours', 'there': 'here', 'here': 'there'}
+        self.prons_to_flip = {'your': 'my', 'my': 'your', 'yours': 'mine', 'mine': 'yours', 'there': 'here', 'here': 'there', 'me': 'you', 'you': 'me'}
         self.single_verb_exceptions = {'there'}
         self.master_auxiliary = ()
         self.master_noun_phrase = list()
@@ -43,12 +43,12 @@ class BadAdviceCFG:
             if not success:
                 return "not a valid verb phrase"
 
-        toReturn = f'aux: {self._reconstruct_sentence(self.master_auxiliary)}\n' \
-                   f'NP: {self._reconstruct_sentence(self.master_noun_phrase)}\n' \
-                   f'VP: {self._reconstruct_sentence(self.master_verb_phrase)}'
+        # toReturn = f'aux: {self._reconstruct_sentence(self.master_auxiliary)}\n' \
+        #            f'NP: {self._reconstruct_sentence(self.master_noun_phrase)}\n' \
+        #            f'VP: {self._reconstruct_sentence(self.master_verb_phrase)}'
 
-        return toReturn
-        # return self._build_advice(self.master_auxiliary, self.master_noun_phrase, self.master_verb_phrase)
+        # return toReturn
+        return self._build_advice(self.master_auxiliary, self.master_noun_phrase, self.master_verb_phrase)
 
     def _tokenize(self, sent):
         toks = nltk.word_tokenize(sent)
@@ -129,6 +129,9 @@ class BadAdviceCFG:
 
     def _build_advice(self, auxiliary, noun_phrase, verb_phase):
 
+        if verb_phase[len(verb_phase) - 1][1] == '.':
+            del verb_phase[-1]
+
         if len(self.master_pronoun) > 0:
             noun_phrase = list()
             noun_phrase.append(self._flip_pronoun(self.master_pronoun[0]))
@@ -139,6 +142,10 @@ class BadAdviceCFG:
 
         noun_phrase = self._flip_remaining_prons(noun_phrase, 0)
         verb_phase = self._flip_remaining_prons(verb_phase, 0)
+
+        auxiliary = self._capitalize(auxiliary)
+        noun_phrase = self._capitalize(noun_phrase)
+        verb_phase = self._capitalize(verb_phase)
 
         if random.random() < .5:
             advice = 'no, '
@@ -152,11 +159,13 @@ class BadAdviceCFG:
             advice += self._reconstruct_sentence(auxiliary)
             advice += ' not '
             advice += self._reconstruct_sentence(verb_phase)
+        advice += '.'
+        advice = advice[0].upper() + advice[1:]
         return advice
 
     def _flip_pronoun(self, pronoun):
         if pronoun[0] == 'you':
-            return ('i', pronoun[1])
+            return ('I', pronoun[1])
         if pronoun[0] == 'i':
             return ('you', pronoun[1])
         return pronoun
@@ -202,3 +211,14 @@ class BadAdviceCFG:
             if each[1] == 'IN':
                 break
         return
+
+    def _capitalize(self, tagged_toks):
+        toReturn = list()
+        for tok, tag in tagged_toks:
+            if tok == 'i':
+                toReturn.append((tok.upper(), tag))
+            elif tag.startswith('NNP'):
+                toReturn.append((tok.capitalize(), tag))
+            else:
+                toReturn.append((tok, tag))
+        return toReturn
