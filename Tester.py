@@ -1,4 +1,5 @@
-from BadAdvice import BadAdvice
+from BadAdviceCFG import BadAdviceCFG as BadAdvice
+# from BadAdvice import BadAdvice
 
 badAdvice = BadAdvice()
 
