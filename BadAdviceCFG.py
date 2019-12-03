@@ -1,14 +1,24 @@
 import random
 
 import nltk
+from mlconjug import mlconjug
+
 
 class BadAdviceCFG:
     def __init__(self):
-        self.auxiliaries = {'can', 'do', 'are', 'should', 'is', 'does'}
+
+        self.default_conjugator = mlconjug.Conjugator(language='en')
+        self.lemmatizer = nltk.WordNetLemmatizer()
+
+        self.auxiliaries = {'is', 'am', 'are', 'was', 'were', 'have', 'has', 'had', 'do', 'does', 'did', 'could', 'would', 'should', 'may', 'must', 'might', 'can', 'will', 'won\'t'}
+        self.prons_to_flip = {'your': 'my', 'my': 'your', 'yours': 'mine', 'mine': 'yours', 'there': 'here', 'here': 'there'}
+        self.single_verb_exceptions = {'there'}
         self.master_auxiliary = ()
         self.master_noun_phrase = list()
         self.master_verb_phrase = list()
         self.tagged_tokens = list()
+        self.master_pronoun = list()
+        self.flippable_pronouns = {'i', 'you'}
         pass
 
     def get_advice(self, sent):
@@ -16,6 +26,7 @@ class BadAdviceCFG:
         self.master_noun_phrase = list()
         self.master_verb_phrase = list()
         self.noun_post_head = list()
+        self.master_pronoun = list()
 
         sent = sent.lower()
         self.tagged_toks = self._tokenize(sent)
@@ -25,15 +36,19 @@ class BadAdviceCFG:
         success = self._find_NP(self.tagged_toks, self.master_noun_phrase)
         if not success:
             return "not a valid noun phrase"
-        success = self._find_VP(self.tagged_toks, self.master_verb_phrase)
-        if not success:
-            return "not a valid verb phrase"
+        if len(self.tagged_toks) == 0:
+            self._retract_VP_PP(self.master_noun_phrase, self.master_verb_phrase)
+        else:
+            success = self._find_VP(self.tagged_toks, self.master_verb_phrase)
+            if not success:
+                return "not a valid verb phrase"
 
-        # toReturn = f'aux: {self._reconstruct_sentence(self.master_auxiliary)}\n' \
-        #            f'NP: {self._reconstruct_sentence(self.master_noun_phrase)}\n' \
-        #            f'VP: {self._reconstruct_sentence(self.master_verb_phrase)}'
+        toReturn = f'aux: {self._reconstruct_sentence(self.master_auxiliary)}\n' \
+                   f'NP: {self._reconstruct_sentence(self.master_noun_phrase)}\n' \
+                   f'VP: {self._reconstruct_sentence(self.master_verb_phrase)}'
 
-        return self._build_advice(self.master_auxiliary, self.master_noun_phrase, self.master_verb_phrase)
+        return toReturn
+        # return self._build_advice(self.master_auxiliary, self.master_noun_phrase, self.master_verb_phrase)
 
     def _tokenize(self, sent):
         toks = nltk.word_tokenize(sent)
@@ -48,6 +63,13 @@ class BadAdviceCFG:
             return False
 
     def _find_NP(self, tagged_toks, collector):
+        if tagged_toks[0][0] in self.flippable_pronouns:
+            self.master_pronoun.append(tagged_toks.pop(0))
+            self.master_noun_phrase = self.master_pronoun
+            return True
+        if tagged_toks[0][0] in self.single_verb_exceptions:
+            self.master_noun_phrase.append(tagged_toks.pop(0))
+            return True
         self._find_pre_head(tagged_toks, collector)
         self._find_noun_head(tagged_toks, collector)
         noun_post_head = list()
@@ -68,7 +90,7 @@ class BadAdviceCFG:
         return True
 
     def _find_pre_head(self, tagged_toks, collector):
-        if tagged_toks[0][1] == 'DT':
+        if tagged_toks[0][1] == 'DT' or tagged_toks[0][1] == 'PRP$':
             collector.append(tagged_toks.pop(0))
         if not tagged_toks[0][1].startswith('N') and not tagged_toks[0][1].startswith('P'):
             collector.append(tagged_toks.pop(0))
@@ -77,7 +99,7 @@ class BadAdviceCFG:
 
     def _find_noun_head(self, tagged_toks, collector):
         if tagged_toks[0][1].startswith('N') or \
-                tagged_toks[0][1].startswith('P'):
+                tagged_toks[0][1] == 'PRP':
             collector.append(tagged_toks.pop(0))
         return True
 
@@ -106,6 +128,18 @@ class BadAdviceCFG:
         return ' '.join([x[0] for x in tagged_toks])
 
     def _build_advice(self, auxiliary, noun_phrase, verb_phase):
+
+        if len(self.master_pronoun) > 0:
+            noun_phrase = list()
+            noun_phrase.append(self._flip_pronoun(self.master_pronoun[0]))
+            new_pos = self._get_person(noun_phrase[0][0])
+            new_aux = (self._flip_verb(auxiliary[0][0], new_pos), new_pos)
+            auxiliary.clear()
+            auxiliary.append(new_aux)
+
+        noun_phrase = self._flip_remaining_prons(noun_phrase, 0)
+        verb_phase = self._flip_remaining_prons(verb_phase, 0)
+
         if random.random() < .5:
             advice = 'no, '
             advice += self._reconstruct_sentence(noun_phrase) + ' '
@@ -119,3 +153,52 @@ class BadAdviceCFG:
             advice += ' not '
             advice += self._reconstruct_sentence(verb_phase)
         return advice
+
+    def _flip_pronoun(self, pronoun):
+        if pronoun[0] == 'you':
+            return ('i', pronoun[1])
+        if pronoun[0] == 'i':
+            return ('you', pronoun[1])
+        return pronoun
+
+    def _flip_verb(self, verb, needed_pos):
+        lemma = self.lemmatizer.lemmatize(verb, pos='v')
+        toReturn = self.default_conjugator.conjugate(lemma).conjug_info['indicative']['indicative present'][needed_pos]
+        return toReturn
+
+    def _get_person(self, person_in):
+        first_singulars = ['i', 'I']
+        second_singulars = ['you']
+        first_plurals = ['we']
+        second_plurals = ['yall', 'y\'all']
+
+        first_sing_tag = '1s'
+        second_sing_tag = '2s'
+        third_sing_tag = '3s'
+        first_plur_tag = '1p'
+        second_plur_tag = '2p'
+        third_plur_tag = '3p'
+
+        if person_in in first_singulars:
+            return first_sing_tag
+        if person_in in second_singulars:
+            return second_sing_tag
+        if person_in in first_plurals:
+            return first_plur_tag
+        if person_in in second_plurals:
+            return second_plur_tag
+        return third_sing_tag
+
+    def _flip_remaining_prons(self, tagged_toks, starting_index):
+        for i in range(starting_index, len(tagged_toks)):
+            if tagged_toks[i][0] in self.prons_to_flip:
+                tagged_toks[i] = (self.prons_to_flip[tagged_toks[i][0]], tagged_toks[i][1])
+        return tagged_toks
+
+    def _retract_VP_PP(self, noun_phrase, verb_phrase):
+        for each in noun_phrase[-1::-1]:
+            verb_phrase.insert(0, each)
+            noun_phrase.remove(each)
+            if each[1] == 'IN':
+                break
+        return
