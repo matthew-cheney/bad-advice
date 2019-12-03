@@ -11,17 +11,49 @@ class BadAdviceCFG:
         self.lemmatizer = nltk.WordNetLemmatizer()
 
         self.auxiliaries = {'is', 'am', 'are', 'was', 'were', 'have', 'has', 'had', 'do', 'does', 'did', 'could', 'would', 'should', 'may', 'must', 'might', 'can', 'will', 'won\'t'}
-        self.prons_to_flip = {'your': 'my', 'my': 'your', 'yours': 'mine', 'mine': 'yours', 'there': 'here', 'here': 'there', 'me': 'you', 'you': 'me'}
+        self.prons_to_flip = {'your': 'my', 'my': 'your', 'yours': 'mine', 'mine': 'yours', 'there': 'here', 'here': 'there', 'me': 'you', 'you': 'me', 'I': 'you', 'i': 'you'}
         self.single_verb_exceptions = {'there'}
-        self.master_auxiliary = ()
+        self.non_conjugating_verbs = {'should', 'would', 'could'}
+        '''        self.master_auxiliary = ()
         self.master_noun_phrase = list()
         self.master_verb_phrase = list()
         self.tagged_tokens = list()
-        self.master_pronoun = list()
+        self.master_pronoun = list()'''
         self.flippable_pronouns = {'i', 'you'}
-        pass
+
+        self.yes_pres = [
+            'Yes, ',
+            'Hm... I am going to go with yes, ',
+            'It is a close one, but yes, ',
+            'I do not understand why this is so important to you, but yes, ',
+            'Of course, '
+        ]
+
+        self.no_pres = [
+            'No, ',
+            'Most definitely not, ',
+            'There is no way, ',
+            'Not by a longshot. No, ',
+            'I am positive that no, '
+        ]
+
+        self.after_advice = [
+            '.',
+            '. Everybody knows that.',
+            '. Why would you even ask such a question?',
+            '. At least, I think so.',
+            '. But do no take my word for it.',
+            '. Without a doubt.'
+        ]
 
     def get_advice(self, sent):
+        try:
+            advice = self._get_advice(sent)
+        except Exception:
+            advice = 'No. Next question.'
+        return advice
+
+    def _get_advice(self, sent):
         self.master_auxiliary = list()
         self.master_noun_phrase = list()
         self.master_verb_phrase = list()
@@ -140,26 +172,26 @@ class BadAdviceCFG:
             auxiliary.clear()
             auxiliary.append(new_aux)
 
-        noun_phrase = self._flip_remaining_prons(noun_phrase, 0)
-        verb_phase = self._flip_remaining_prons(verb_phase, 0)
+        noun_phrase = self._flip_remaining_prons(noun_phrase, 0, True)
+        verb_phase = self._flip_remaining_prons(verb_phase, 0, False)
 
         auxiliary = self._capitalize(auxiliary)
         noun_phrase = self._capitalize(noun_phrase)
         verb_phase = self._capitalize(verb_phase)
 
         if random.random() < .5:
-            advice = 'no, '
-            advice += self._reconstruct_sentence(noun_phrase) + ' '
-            advice += self._reconstruct_sentence(auxiliary)
-            advice += ' not '
-            advice += self._reconstruct_sentence(verb_phase)
+            yes = False
         else:
-            advice = 'no, '
-            advice += self._reconstruct_sentence(noun_phrase) + ' '
-            advice += self._reconstruct_sentence(auxiliary)
+            yes = True
+        advice = self._get_pre_advice(yes)
+        advice += self._reconstruct_sentence(noun_phrase) + ' '
+        advice += self._reconstruct_sentence(auxiliary)
+        if not yes:
             advice += ' not '
-            advice += self._reconstruct_sentence(verb_phase)
-        advice += '.'
+        else:
+            advice += ' '
+        advice += self._reconstruct_sentence(verb_phase)
+        advice += self._get_after_advice()
         advice = advice[0].upper() + advice[1:]
         return advice
 
@@ -171,6 +203,8 @@ class BadAdviceCFG:
         return pronoun
 
     def _flip_verb(self, verb, needed_pos):
+        if verb in self.non_conjugating_verbs:
+            return verb
         lemma = self.lemmatizer.lemmatize(verb, pos='v')
         toReturn = self.default_conjugator.conjugate(lemma).conjug_info['indicative']['indicative present'][needed_pos]
         return toReturn
@@ -198,9 +232,12 @@ class BadAdviceCFG:
             return second_plur_tag
         return third_sing_tag
 
-    def _flip_remaining_prons(self, tagged_toks, starting_index):
+    def _flip_remaining_prons(self, tagged_toks, starting_index, skipFirst):
         for i in range(starting_index, len(tagged_toks)):
             if tagged_toks[i][0] in self.prons_to_flip:
+                if skipFirst:
+                    skipFirst = False
+                    continue
                 tagged_toks[i] = (self.prons_to_flip[tagged_toks[i][0]], tagged_toks[i][1])
         return tagged_toks
 
@@ -222,3 +259,12 @@ class BadAdviceCFG:
             else:
                 toReturn.append((tok, tag))
         return toReturn
+
+    def _get_pre_advice(self, yes):
+        if yes:
+            return self.yes_pres[random.randint(0, len(self.yes_pres) - 1)]
+        else:
+            return self.no_pres[random.randint(0, len(self.no_pres) - 1)]
+
+    def _get_after_advice(self):
+        return self.after_advice[random.randint(0, len(self.after_advice) - 1)]
